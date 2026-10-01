@@ -319,7 +319,94 @@ async function main() {
   check('零结果时给出放宽说明（不静默放宽）', Array.isArray(searchFallback.json?.relaxed));
   check('放宽说明写明放宽了什么', (searchFallback.json?.relaxed ?? []).length === 0 || searchFallback.json.relaxed[0].note.includes('已放宽'));
 
-  // 17. 地点模糊化预览（owner）
+  // 17. 风格相似推荐：四维可解释 + 反馈排序 + 重置 + 重复查询一致
+  const similarCard = await req('POST', '/inspirations', { title: '相似的连廊逆光（二号机位）' });
+  const similarId = similarCard.json.id;
+  await req('POST', '/inspirations/bulk-tag', {
+    ids: [similarId],
+    addTagIds: [tIds['逆光'], tIds['连廊']],
+  });
+  const spot2 = await req('POST', '/spots', {
+    placeId: place.json.id,
+    lat: 31.248,
+    lng: 121.447,
+    cameraBearing: 270,
+  });
+  await req('POST', `/inspirations/${similarId}/spot`, { spotId: spot2.json.id });
+  await req('PUT', `/inspirations/${similarId}/timing`, {
+    timeAnchor: 'sunset_minus',
+    anchorOffsetMin: 40,
+    elevationRange: [-4, 10],
+    azimuthRange: [255, 275],
+    azimuthTolerance: 15,
+    windowToleranceMin: 12,
+    weatherProfile: {},
+    seasonWindow: null,
+    notes: null,
+  });
+
+  // 再建一张弱一些的相似卡：标签只有一个交集、机位朝向差更大 → 基础分排第二，
+  // 这样"踩第一名"后它能反超，真实演示反馈对排序的影响。
+  const similarCard2 = await req('POST', '/inspirations', { title: '连廊侧逆光（三号机位）' });
+  const similarId2 = similarCard2.json.id;
+  await req('POST', '/inspirations/bulk-tag', { ids: [similarId2], addTagIds: [tIds['连廊']] });
+  const spot3 = await req('POST', '/spots', {
+    placeId: place.json.id,
+    lat: 31.249,
+    lng: 121.448,
+    cameraBearing: 235,
+  });
+  await req('POST', `/inspirations/${similarId2}/spot`, { spotId: spot3.json.id });
+  await req('PUT', `/inspirations/${similarId2}/timing`, {
+    timeAnchor: 'sunset_minus',
+    anchorOffsetMin: 40,
+    elevationRange: [-4, 10],
+    azimuthRange: [45, 65],
+    azimuthTolerance: 15,
+    windowToleranceMin: 12,
+    weatherProfile: {},
+    seasonWindow: null,
+    notes: null,
+  });
+
+  const similar = await req('GET', `/inspirations/${cardId}/similar?size=10`);
+  check('风格推荐返回 200 与权重声明', similar.status === 200 && Object.keys(similar.json?.weights ?? {}).length === 4);
+  const recItems = similar.json?.items ?? [];
+  check('风格推荐命中相似卡（标签+光位+机位多维）', recItems.some((r) => r.inspiration.id === similarId));
+  check('风格推荐至少给出两张候选（演示反馈换位的前提）', recItems.length >= 2, String(recItems.length));
+  const rec = recItems.find((r) => r.inspiration.id === similarId);
+  check('推荐结果四维齐全且每维有可复算理由', Array.isArray(rec?.dimensions) && rec.dimensions.length === 4 &&
+    rec.dimensions.every((d) => typeof d.reason === 'string' && d.reason.length > 0));
+  check('可解释理由包含实际值 vs 目标值（角度）', rec.dimensions.some((d) => d.key === 'light' && /°/.test(d.reason)) &&
+    rec.dimensions.some((d) => d.key === 'camera' && /机位朝向差/.test(d.reason)));
+
+  const similarAgain = await req('GET', `/inspirations/${cardId}/similar?size=10`);
+  check(
+    '重复查询顺序与分数完全一致（确定性排序）',
+    JSON.stringify(similarAgain.json.items.map((r) => [r.inspiration.id, r.score, r.adjustedScore])) ===
+      JSON.stringify(recItems.map((r) => [r.inspiration.id, r.score, r.adjustedScore])),
+  );
+
+  const beforeOrder = similarAgain.json.items.map((r) => r.inspiration.id);
+  const beforeTop = beforeOrder[0];
+  const vote = await req('POST', `/inspirations/${cardId}/similar/feedback`, { targetId: beforeTop, vote: 'down' });
+  check('反馈（踩）被记录', vote.status === 201 && vote.json?.vote === 'down', JSON.stringify(vote.json));
+  const afterVote = await req('GET', `/inspirations/${cardId}/similar?size=10`);
+  check('反馈影响排序（被踩目标不再居首且带位移标注）',
+    afterVote.json.items[0]?.inspiration.id !== beforeTop &&
+    afterVote.json.feedbackApplied >= 1 &&
+    afterVote.json.items.some((r) => r.inspiration.id === beforeTop && r.feedback.vote === 'down'));
+
+  const reset = await req('POST', `/inspirations/${cardId}/similar/reset`, {});
+  check('反馈可重置（删除条数 >= 1）', reset.status === 200 && reset.json?.deleted >= 1, JSON.stringify(reset.json));
+  const afterReset = await req('GET', `/inspirations/${cardId}/similar?size=10`);
+  check('重置后排序恢复且不再有反馈位移',
+    JSON.stringify(afterReset.json.items.map((r) => r.inspiration.id)) === JSON.stringify(beforeOrder) &&
+    afterReset.json.feedbackApplied === 0);
+  const selfVote = await req('POST', `/inspirations/${cardId}/similar/feedback`, { targetId: cardId, vote: 'up' });
+  check('不能对源卡本身反馈（400）', selfVote.status === 400);
+
+  // 18. 地点模糊化预览（owner）
   const fuzzPreview = await req('GET', `/spots/${spot.json.id}/fuzz-preview?level=g1k`);
   check('owner 可预览不同模糊级别', fuzzPreview.status === 200 && Boolean(fuzzPreview.json?.fuzz?.geohash));
   check('模糊预览与精确坐标不同（网格中心化）', fuzzPreview.json?.fuzz?.lat !== 31.2471);

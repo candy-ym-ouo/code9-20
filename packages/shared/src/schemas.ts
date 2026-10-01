@@ -209,4 +209,16 @@ export const offlineOpSchema = z.object({
   payload: z.record(z.unknown()),
 });
 
+/** 风格推荐：显式反馈（赞/踩），none = 撤销这条反馈 */
+export const styleVoteSchema = z.object({
+  targetId: z.string().min(1),
+  vote: z.enum(['up', 'down', 'none']),
+});
+
+export const styleRecommendQuerySchema = z.object({
+  size: z.coerce.number().int().min(1).max(50).default(12),
+  /** 评分阈值（基础分），低于此值不返回 */
+  minScore: z.coerce.number().min(0).max(1).default(0.15),
+});
+
 export { AssetRole };

@@ -39,6 +39,7 @@ import { AnnotationEditor, type DraftAnnotation } from '../components/Annotation
 import { TimingEditor } from '../components/TimingEditor.js';
 import { WindowList } from '../components/WindowList.js';
 import { TagPicker } from '../components/TagPicker.js';
+import { SimilarStyles } from '../components/SimilarStyles.js';
 
 export default function InspirationDetail() {
   const { id } = useParams<{ id: string }>();
@@ -291,6 +292,8 @@ export default function InspirationDetail() {
         tz={tz}
         onPlanned={() => void detail.refetch()}
       />
+
+      <SimilarStyles sourceId={item.id} />
 
       {calibration.length ? (
         <Card title="校准历史（系统学过什么，可撤销）">

@@ -8,6 +8,7 @@ import type {
   ReproWindowDto,
   SearchResult,
   SpotDto,
+  StyleRecommendationResult,
   TagDto,
   TimingDto,
 } from '@flil/shared';
@@ -86,6 +87,24 @@ export const useSearch = (params: Record<string, string | number | undefined>, e
 
 export const useSpots = () =>
   useQuery({ queryKey: ['spots'], queryFn: () => get<{ items: SpotDto[] }>('/spots') });
+
+// ------------------------------------------------------ 风格相似推荐
+
+export const useSimilarStyles = (
+  sourceId: string | undefined,
+  opts: { size?: number; minScore?: number; enabled?: boolean } = {},
+) => {
+  const size = opts.size ?? 12;
+  const minScore = opts.minScore ?? 0.15;
+  return useQuery({
+    queryKey: ['similarStyles', sourceId, size, minScore],
+    queryFn: () =>
+      get<StyleRecommendationResult>(
+        `/inspirations/${sourceId}/similar?size=${size}&minScore=${minScore}`,
+      ),
+    enabled: (opts.enabled ?? true) && Boolean(sourceId),
+  });
+};
 
 export const usePlaces = () =>
   useQuery({
@@ -325,5 +344,34 @@ export function useRevokeShare() {
   return useMutation({
     mutationFn: (id: string) => post<unknown>(`/share-links/${id}/revoke`, {}),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['shareLinks'] }),
+  });
+}
+
+/** 风格推荐反馈（赞/踩/撤销），成功后刷新该源卡的推荐 */
+export function useStyleFeedback(sourceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ targetId, vote }: { targetId: string; vote: 'up' | 'down' | 'none' }) =>
+      post<{ vote: 'up' | 'down' | null; updatedAt: string | null }>(
+        `/inspirations/${sourceId}/similar/feedback`,
+        { targetId, vote },
+      ),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['similarStyles', sourceId] }),
+  });
+}
+
+/** 重置反馈：scope='source' 只清这张卡；scope='library' 清空全部 */
+export function useResetStyleFeedback(sourceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (scope: 'source' | 'library' = 'source') =>
+      post<{ deleted: number }>(
+        scope === 'source' ? `/inspirations/${sourceId}/similar/reset` : '/style-feedback/reset',
+        {},
+      ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['similarStyles'] });
+      void qc.invalidateQueries({ queryKey: ['styleFeedback'] });
+    },
   });
 }

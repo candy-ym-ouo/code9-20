@@ -4,6 +4,7 @@ export * from './geometry.js';
 export * from './geo.js';
 export * from './time.js';
 export * from './palette.js';
+export * from './style.js';
 export * from './astro.js';
 export * from './schemas.js';
 export * from './presets.js';

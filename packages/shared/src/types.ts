@@ -17,6 +17,7 @@ import type {
   WindowVerdict,
 } from './enums.js';
 import type { PaletteColor } from './palette.js';
+import type { StyleDimensionKey } from './style.js';
 
 export interface WeatherProfile {
   cloudCoverPct?: { min: number; max: number };
@@ -219,6 +220,42 @@ export interface SearchRelaxation {
   from: string;
   to: string;
   note: string;
+}
+
+export interface StyleDimensionDto {
+  key: StyleDimensionKey;
+  label: string;
+  /** 该维度原始得分 0..1 */
+  score: number;
+  /** 归一化后实际参与加权的权重（缺失维度被重分配） */
+  weight: number;
+  available: boolean;
+  /** 一句话可复算理由：实际值 vs 目标值 */
+  reason: string;
+}
+
+export interface StyleRecommendationDto {
+  inspiration: InspirationDto;
+  /** 四维加权基础分（未含反馈）0..1 */
+  score: number;
+  /** 应用反馈位移后的排序分 0..1 */
+  adjustedScore: number;
+  availableDimensionCount: number;
+  dimensions: StyleDimensionDto[];
+  feedback: { vote: 'up' | 'down' | null; updatedAt: string | null };
+  /** 为什么排在这里的人话总结 */
+  summary: string;
+}
+
+export interface StyleRecommendationResult {
+  sourceId: string;
+  items: StyleRecommendationDto[];
+  total: number;
+  /** 本次参与打分的候选数 / 因可比较维度不足被跳过的数量 */
+  scanned: number;
+  skipped: number;
+  feedbackApplied: number;
+  weights: Record<StyleDimensionKey, number>;
 }
 
 export interface SearchResult {

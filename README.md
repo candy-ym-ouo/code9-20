@@ -43,8 +43,8 @@ npm start          # 后端 3000 端口同时托管前端，SPA fallback 已配�
 ## 验证（这三条命令就是"真的能跑"的证明）
 
 ```bash
-npm test                        # 76 个自动化测试：天文 / 几何 / geohash / 窗口判定 / API 闭环
-npm run smoke                   # 69 项真实 HTTP 断言（需先启动服务端）
+npm test                        # 94 个自动化测试：天文 / 几何 / geohash / 窗口判定 / 风格推荐 / API 闭环
+npm run smoke                   # 79 项真实 HTTP 断言（需先启动服务端）
 npm run test:e2e                # 2 个真实浏览器闭环用例（需先 npm run build && npm start）
 ```
 
@@ -76,6 +76,7 @@ npx playwright install chromium
 | **回填反哺判断** | 连续 3 次同因（天气不符/时间差了）未命中 → 系统自动收紧方位角容差或云量区间，并留下**可撤销**的校准记录。 |
 | **地点模糊化不是"打个码"** | 用 geohash 网格中心做稳定输出（不是随机抖动——随机值可被多次请求平均反推）；`exact`/`g100` 在服务端被**强制降级**为 500m，不靠前端隐藏。 |
 | **画册有缺口清单** | 画册不是文件夹：定主题 → 系统算出"还差什么" → 每条缺口给一键动作 → 必需缺口不闭合则**发布被拒（409）**。 |
+| **相似推荐必须可解释** | "找风格相似的卡"不是黑盒向量：色板（主色序列）+ 标签（Jaccard）+ 光位（相对机位的光位角/仰角）+ 机位朝向，四维各给"实际值 vs 目标值"的理由与权重。打分是纯函数、排序用 id 兜底，**重复查询顺序完全一致**。赞/踩只做排序位移（+0.12 / −0.40），重置就是删除反馈行，立刻回到纯风格分。 |
 
 ---
 
@@ -83,23 +84,26 @@ npx playwright install chromium
 
 ```
 origin/
-├── packages/shared/          # 前后端共享：枚举、类型、zod schema、天文/几何/geohash 纯函数
-│   └── src/astro.ts          #   ↑ 自研太阳位置算法（无三方天文库）
+├── packages/shared/          # 前后端共享：枚举、类型、zod schema、天文/几何/geohash/风格打分纯函数
+│   ├── src/astro.ts          #   ↑ 自研太阳位置算法（无三方天文库）
+│   └── src/style.ts          #   ↑ 风格相似四维打分与确定性排序（无 IO/无随机/无时钟）
 ├── apps/server/              # Node.js + Express + better-sqlite3 + sharp
 │   ├── sql/0001_init.sql     # 建表 SQL（可读、可 diff）
 │   └── src/
 │       ├── services/         # 全部闭环逻辑集中在这里
 │       │   ├── windowEngine.ts   # 窗口计算与判定理由
+│       │   ├── styleRecommend.ts # 风格指纹抽取 + 反馈/重置
 │       │   ├── weather.ts        # Open-Meteo 取数 + 缓存 + 降级 + 气候基线
 │       │   ├── fuzzing.ts        # 地点模糊化（geohash 网格中心）
 │       │   ├── calibration.ts    # 回填校准与收窄
 │       │   ├── reminders.ts      # 9 条提醒规则 + 终态保证
 │       │   ├── albums.ts         # 画册匹配 / 缺口 / 发布快照
 │       │   └── serialization.ts  # ★ 精确坐标的唯一出口
-│       └── routes/           # 8 个路由模块，约 70 个端点
+│       └── routes/           # 9 个路由模块，约 76 个端点
 └── apps/web/                 # React 18 + Vite + TypeScript + Ant Design
     ├── src/components/       # TagPicker / AnnotationEditor(Canvas 标注) / TimingEditor /
-    │                         # WindowList / MapCanvas(自绘可换瓦片源) / ResultForm
+    │                         # WindowList / MapCanvas(自绘可换瓦片源) / ResultForm /
+    │                         # SimilarStyles(可解释相似推荐 + 赞踩反馈/重置)
     └── src/routes/           # 今日 / 收件箱 / 灵感卡 / 检索 / 计划 / 画册 / 地点 / 设置 / 分享页
 ```
 

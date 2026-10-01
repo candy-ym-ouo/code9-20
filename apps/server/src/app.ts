@@ -13,6 +13,7 @@ import { timingRouter } from './routes/timing.js';
 import { workflowRouter } from './routes/workflow.js';
 import { albumRouter } from './routes/albums.js';
 import { searchRouter } from './routes/search.js';
+import { styleRouter } from './routes/style.js';
 import { shareRouter, publicShareRouter } from './routes/share.js';
 import { opsRouter } from './routes/ops.js';
 
@@ -39,6 +40,7 @@ export function createApp(): Express {
   app.use('/api', workflowRouter);
   app.use('/api', albumRouter);
   app.use('/api', searchRouter);
+  app.use('/api', styleRouter);
   app.use('/api', shareRouter);
 
   app.use('/api', (_req, res) => {
