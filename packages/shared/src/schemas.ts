@@ -209,4 +209,10 @@ export const offlineOpSchema = z.object({
   payload: z.record(z.unknown()),
 });
 
+/** 风格相似推荐反馈：对某张候选卡点赞/点踩，影响后续排序（可重置） */
+export const similarFeedbackSchema = z.object({
+  targetId: z.string().min(1),
+  signal: z.enum(['up', 'down']),
+});
+
 export { AssetRole };

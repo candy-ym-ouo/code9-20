@@ -7,6 +7,7 @@ import type {
   ReminderDto,
   ReproWindowDto,
   SearchResult,
+  SimilarResultDto,
   SpotDto,
   TagDto,
   TimingDto,
@@ -86,6 +87,14 @@ export const useSearch = (params: Record<string, string | number | undefined>, e
 
 export const useSpots = () =>
   useQuery({ queryKey: ['spots'], queryFn: () => get<{ items: SpotDto[] }>('/spots') });
+
+/** 风格相似推荐：四维（色板/标签/光位/机位）可解释打分 + 反馈调序 */
+export const useSimilar = (id: string | undefined, limit = 12) =>
+  useQuery({
+    queryKey: ['similar', id, limit],
+    queryFn: () => get<SimilarResultDto>(`/inspirations/${id}/similar?limit=${limit}`),
+    enabled: Boolean(id),
+  });
 
 export const usePlaces = () =>
   useQuery({
@@ -299,6 +308,28 @@ export function useRecomputeSun() {
       }>(`/assets/${assetId}/recompute-sun`, {}),
     onSuccess: invalidate,
   });
+}
+
+/** 相似推荐反馈：点赞/点踩/撤销单条/全部重置，都会让列表重新排序 */
+export function useSimilarFeedback(seedId: string | undefined) {
+  const qc = useQueryClient();
+  const invalidate = () => void qc.invalidateQueries({ queryKey: ['similar', seedId] });
+  return {
+    send: useMutation({
+      mutationFn: ({ targetId, signal }: { targetId: string; signal: 'up' | 'down' }) =>
+        post<{ feedbackCount: number }>(`/inspirations/${seedId}/similar/feedback`, { targetId, signal }),
+      onSuccess: invalidate,
+    }),
+    clearOne: useMutation({
+      mutationFn: (targetId: string) =>
+        del<{ feedbackCount: number }>(`/inspirations/${seedId}/similar/feedback/${targetId}`),
+      onSuccess: invalidate,
+    }),
+    reset: useMutation({
+      mutationFn: () => post<{ cleared: number }>(`/inspirations/${seedId}/similar/feedback/reset`, {}),
+      onSuccess: invalidate,
+    }),
+  };
 }
 
 export function useShareLinks() {

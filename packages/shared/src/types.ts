@@ -228,6 +228,39 @@ export interface SearchResult {
   suggestions?: { tagIds: string[]; tagNames: string[]; message: string } | null;
 }
 
+// ---------------------------------------------------------------- 风格相似推荐
+
+export interface SimilarDimensionDto {
+  key: 'palette' | 'tag' | 'light' | 'camera';
+  label: string;
+  /** 该维度在这张候选上的实际权重（按可用维度归一化后，不可用为 0） */
+  weight: number;
+  /** null = 数据缺失，未参与计分 */
+  score: number | null;
+  /** 可复算的中文理由，如「光位 212°（条件方位角）↔ 200°，相差 12°」 */
+  reason: string;
+}
+
+export interface SimilarItemDto {
+  inspiration: InspirationDto;
+  /** 最终分 = 基础分 + 反馈调整（0..1） */
+  score: number;
+  /** 四维加权的基础分（未含反馈） */
+  baseScore: number;
+  feedbackSignal: 'up' | 'down' | null;
+  feedbackDelta: number;
+  dimensions: SimilarDimensionDto[];
+}
+
+export interface SimilarResultDto {
+  seedId: string;
+  /** 四个维度的基础权重（候选缺数据时会按可用维度归一化） */
+  weights: Record<string, number>;
+  /** 当前种子卡收到的反馈总数（重置前） */
+  feedbackCount: number;
+  items: SimilarItemDto[];
+}
+
 export interface AuthUser {
   id: string;
   email: string;

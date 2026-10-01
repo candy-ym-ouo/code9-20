@@ -319,18 +319,63 @@ async function main() {
   check('零结果时给出放宽说明（不静默放宽）', Array.isArray(searchFallback.json?.relaxed));
   check('放宽说明写明放宽了什么', (searchFallback.json?.relaxed ?? []).length === 0 || searchFallback.json.relaxed[0].note.includes('已放宽'));
 
-  // 17. 地点模糊化预览（owner）
+  // 17. 风格相似推荐：四维可解释 + 反馈调序 + 可重置 + 顺序稳定
+  const similarCard = await req('POST', '/inspirations', { title: '四号楼连廊同款逆光' });
+  const similarId = similarCard.json?.id;
+  await req('POST', '/inspirations/bulk-tag', { ids: [similarId], addTagIds: [tIds['逆光'], tIds['连廊']] });
+  const spot2 = await req('POST', '/spots', { placeId: place.json.id, lat: 31.2472, lng: 121.4463, cameraBearing: 262 });
+  await req('POST', `/inspirations/${similarId}/spot`, { spotId: spot2.json.id });
+  await req('PUT', `/inspirations/${similarId}/timing`, {
+    timeAnchor: 'sunset_minus',
+    anchorOffsetMin: 40,
+    elevationRange: [-4, 10],
+    azimuthRange: [252, 278],
+    azimuthTolerance: 15,
+    windowToleranceMin: 12,
+    weatherProfile: {},
+    seasonWindow: null,
+    notes: null,
+  });
+
+  const sim1 = await req('GET', `/inspirations/${cardId}/similar?limit=10`);
+  const simItems = sim1.json?.items ?? [];
+  check('相似推荐返回候选列表', sim1.status === 200 && simItems.length >= 1, JSON.stringify(sim1.json)?.slice(0, 120));
+  const simTarget = simItems.find((i) => i.inspiration?.id === similarId);
+  check('相似卡排在结果中且四维齐全', Boolean(simTarget) && (simTarget?.dimensions ?? []).length === 4);
+  check('每个维度都给出可复算理由', (simTarget?.dimensions ?? []).every((d) => typeof d.reason === 'string' && d.reason.length > 0));
+  check('缺色板的维度标为未参与且权重归一化',
+    (simTarget?.dimensions ?? []).find((d) => d.key === 'palette')?.score === null &&
+    Math.abs((simTarget?.dimensions ?? []).reduce((s, d) => s + d.weight, 0) - 1) < 1e-6,
+    JSON.stringify((simTarget?.dimensions ?? []).map((d) => [d.key, d.weight])));
+  check('无反馈时最终分等于基础分', simTarget?.score === simTarget?.baseScore && simTarget?.feedbackDelta === 0);
+
+  const sim2 = await req('GET', `/inspirations/${cardId}/similar?limit=10`);
+  check('重复查询顺序完全一致', JSON.stringify((sim2.json?.items ?? []).map((i) => i.inspiration?.id)) === JSON.stringify(simItems.map((i) => i.inspiration?.id)));
+
+  const fbDown = await req('POST', `/inspirations/${cardId}/similar/feedback`, { targetId: similarId, signal: 'down' });
+  check('点踩反馈被接受', fbDown.status === 200 && fbDown.json?.feedbackCount === 1, JSON.stringify(fbDown.json));
+  const sim3 = await req('GET', `/inspirations/${cardId}/similar?limit=10`);
+  const simTarget3 = (sim3.json?.items ?? []).find((i) => i.inspiration?.id === similarId);
+  check('点踩后分数被压下去且调整量可解释', simTarget3?.feedbackDelta < 0 && simTarget3?.score < simTarget3?.baseScore);
+
+  const fbReset = await req('POST', `/inspirations/${cardId}/similar/feedback/reset`, {});
+  check('重置清空全部反馈', fbReset.status === 200 && fbReset.json?.cleared === 1, JSON.stringify(fbReset.json));
+  const sim4 = await req('GET', `/inspirations/${cardId}/similar?limit=10`);
+  const simTarget4 = (sim4.json?.items ?? []).find((i) => i.inspiration?.id === similarId);
+  check('重置后排序恢复到基础分', sim4.json?.feedbackCount === 0 && simTarget4?.score === simTarget4?.baseScore);
+
+  // 18. 地点模糊化预览（owner）
   const fuzzPreview = await req('GET', `/spots/${spot.json.id}/fuzz-preview?level=g1k`);
   check('owner 可预览不同模糊级别', fuzzPreview.status === 200 && Boolean(fuzzPreview.json?.fuzz?.geohash));
   check('模糊预览与精确坐标不同（网格中心化）', fuzzPreview.json?.fuzz?.lat !== 31.2471);
 
-  // 18. 备份与导出
+  // 19. 备份与导出
   const backup = await req('POST', '/backup', {});
   check('可创建备份', backup.status === 201 && typeof backup.json?.name === 'string');
   const listBackups = await req('GET', '/backup/list');
   check('备份列表可读', Array.isArray(listBackups.json?.items));
 
-  // 19. 离线补录幂等
+  // 20. 离线补录幂等
   const opId = `op-${Date.now()}`;
   const offline1 = await req('POST', '/offline/apply', {
     clientOpId: opId,
@@ -346,7 +391,7 @@ async function main() {
   check('重复补录幂等（不产生第二条）', offline2.status === 200 && offline2.json?.duplicate === true);
   check('幂等返回使用 OFFLINE_OP_DUPLICATE 语义', offline2.json?.code === 'OFFLINE_OP_DUPLICATE');
 
-  // 20. 参数校验错误码
+  // 21. 参数校验错误码
   const badTiming = await req('PUT', `/inspirations/${cardId}/timing`, { timeAnchor: 'not_an_anchor' });
   check('非法参数返回 400 而不是 500', badTiming.status === 400 && badTiming.json?.error?.code === 'BAD_REQUEST', JSON.stringify(badTiming.json));
 
